@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Takensysteem in Todoist</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Schibsted+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: één leeskolom van ~46rem, sticky tabbalk met één hoofdstuk per tab, componenten als Todoist-achtige taakkaarten */
+:root {
+  --bg: #1c1c1e;
+  --surface: #252528;
+  --fg: #ececee;
+  --muted: #a1a1a6;
+  --line: #36363a;
+  --accent: #e35d57;
+  --accent-soft: #3d2120;
+  --week: #a4b6cc;
+  --week-soft: #25303b;
+  --nu: #ddbe80;
+  --nu-soft: #3a3020;
+  --wacht: #bdbdc2;
+  --wacht-soft: #313134;
+  --p2: #e6a672;
+  --p2-soft: #3a2c20;
+  --p3: #8faedb;
+  --p3-soft: #212c3b;
+  --due: #9fcba8;
+  --bad: #e08a84;
+  --bad-soft: #2e2222;
+  --font-display: "Schibsted Grotesk", "Inter", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { scroll-behavior: smooth; padding-bottom: env(safe-area-inset-bottom, 0px); }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body);
+  font-size: 16px; line-height: 1.6; padding-top: env(safe-area-inset-top, 0px);
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.wrap { max-width: 46rem; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 0 4rem; }
+h1, h2, h3, h4 { font-family: var(--font-display); line-height: 1.2; text-wrap: balance; margin: 0; }
+h1 { font-size: 2rem; font-weight: 700; }
+h2 { font-size: 1.6rem; font-weight: 700; }
+h3 { font-size: 1.2rem; font-weight: 700; }
+h4 { font-size: 1rem; font-weight: 500; }
+p { margin: 0; max-width: 65ch; }
+a { color: var(--accent); }
+code, .mono { font-family: var(--font-mono); font-size: 0.88em; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+header.top { padding-block: 2.5rem 1.25rem; display: grid; gap: 0.5rem; }
+.eyebrow { font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+
+nav.chapters {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: var(--bg); border-bottom: 1px solid var(--line);
+  display: flex; gap: 0.25rem; padding-block: 0.6rem; overflow-x: auto;
+}
+nav.chapters a {
+  text-decoration: none; color: var(--muted); font-weight: 500; font-size: 0.92rem;
+  padding: 0.35rem 0.75rem; border-radius: 999px; white-space: nowrap;
+}
+nav.chapters a.on { background: var(--accent); color: var(--bg); }
+
+.chapter { padding-top: 2.5rem; display: grid; gap: 2rem; scroll-margin-top: 3.5rem; }
+.chapter > header { display: grid; gap: 0.35rem; padding-bottom: 0.75rem; border-bottom: 2px solid var(--fg); }
+.chapter-num { font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); }
+section { display: grid; gap: 0.9rem; scroll-margin-top: 3.5rem; }
+
+.toc { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 0.8rem 1rem; display: grid; gap: 0.4rem; }
+.toc-title { font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.toc ol { margin: 0; padding-left: 1.3rem; display: grid; gap: 0.25rem; }
+.toc a { color: var(--fg); text-decoration: none; }
+.toc a:hover { color: var(--accent); }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+th, td { text-align: left; vertical-align: top; padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--line); }
+th { font-weight: 600; color: var(--muted); font-size: 0.8rem; letter-spacing: 0.03em; }
+tr:last-child td { border-bottom: 0; }
+.note { font-size: 0.92rem; color: var(--muted); }
+
+/* structuur */
+.tree { display: grid; gap: 0.6rem; }
+.area { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.area > summary { cursor: pointer; padding: 0.75rem 1rem; display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; list-style: none; }
+.area > summary::-webkit-details-marker { display: none; }
+.area > summary::before { content: "▸"; color: var(--muted); margin-right: 0.5rem; transition: transform .15s; display: inline-block; }
+.area[open] > summary::before { transform: rotate(90deg); }
+.area-name { font-family: var(--font-display); font-weight: 700; flex: 1; }
+.area-hint { font-size: 0.82rem; color: var(--muted); text-align: right; }
+.area-body { padding: 0 1rem 1rem 2.1rem; display: grid; gap: 0.5rem; }
+.node { display: grid; gap: 0.15rem; padding-left: 0.85rem; border-left: 2px solid var(--line); }
+.node b { font-weight: 600; font-size: 0.95rem; }
+.node .tag { font-size: 0.72rem; color: var(--muted); font-weight: 500; margin-left: 0.35rem; }
+.secs { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.sec { font-size: 0.78rem; padding: 0.1rem 0.5rem; border-radius: 5px; background: var(--bg); border: 1px solid var(--line); color: var(--muted); }
+
+/* labels, prioriteit, filters */
+.chip { display: inline-flex; align-items: center; gap: 0.25rem; font-family: var(--font-mono); font-size: 0.78rem; padding: 0.05rem 0.45rem; border-radius: 5px; white-space: nowrap; }
+.chip.week { background: var(--week-soft); color: var(--week); }
+.chip.nu { background: var(--nu-soft); color: var(--nu); }
+.chip.wacht { background: var(--wacht-soft); color: var(--wacht); }
+.prio { display: inline-block; min-width: 2.2rem; font-family: var(--font-mono); font-size: 0.8rem; font-weight: 500; text-align: center; border-radius: 5px; padding: 0.05rem 0.35rem; border: 1px solid var(--line); }
+.prio.p1 { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+.prio.p2 { color: var(--p2); background: var(--p2-soft); border-color: transparent; }
+.prio.p3 { color: var(--p3); background: var(--p3-soft); border-color: transparent; }
+.prio.p4 { color: var(--muted); background: var(--bg); }
+.filters { display: grid; gap: 0.5rem; }
+.filter { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.25rem 0.75rem; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 0.7rem 0.9rem; }
+.filter .fname { font-weight: 600; }
+.filter .when { grid-column: 1 / -1; font-size: 0.88rem; color: var(--muted); }
+.query { font-family: var(--font-mono); font-size: 0.85rem; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 0.15rem 0.5rem; justify-self: start; }
+button { font: inherit; cursor: pointer; }
+.btn { border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 7px; padding: 0.3rem 0.7rem; font-size: 0.85rem; font-weight: 500; }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.btn.primary:hover { opacity: 0.9; color: var(--bg); }
+.fold { border-left: 3px solid var(--accent); background: var(--surface); border-radius: 0 10px 10px 0; }
+.fold > summary { cursor: pointer; padding: 0.7rem 1rem; color: var(--accent); font-weight: 500; }
+.fold-body { padding: 0 1rem 1rem; display: grid; gap: 0.9rem; }
+
+/* velden */
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0.6rem; }
+.field { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 0.9rem 1rem; display: grid; gap: 0.4rem; align-content: start; }
+.field .ask { font-family: var(--font-display); color: var(--accent); font-weight: 500; }
+.field p { font-size: 0.9rem; }
+.field .not { font-size: 0.86rem; color: var(--muted); }
+.ladder { display: grid; gap: 0.35rem; }
+.rung { display: grid; grid-template-columns: 2.6rem minmax(0, 1fr); gap: 0.6rem; align-items: start; font-size: 0.9rem; }
+.yes { color: var(--fg); }
+.no { color: var(--muted); }
+
+/* keuzehulp */
+.wizard { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 1.1rem 1.2rem; display: grid; gap: 0.9rem; }
+.wiz-step { font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); }
+.wiz-q { font-family: var(--font-display); font-size: 1.15rem; font-weight: 500; }
+.wiz-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.wiz-result { display: grid; gap: 0.4rem; padding: 0.9rem 1rem; border-radius: 10px; background: var(--accent-soft); }
+.wiz-result strong { font-family: var(--font-display); font-size: 1.2rem; color: var(--accent); }
+
+/* soorten */
+.tabs { display: grid; gap: 0.35rem; }
+.tabrow { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.tab { border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 999px; padding: 0.3rem 0.8rem; font-size: 0.88rem; font-weight: 500; }
+.tab[aria-selected="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.typecard { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 1.2rem; display: grid; gap: 1rem; }
+.factline { font-size: 0.88rem; color: var(--muted); }
+.factline b { color: var(--fg); font-weight: 600; }
+.wwh { display: grid; gap: 0.75rem; }
+.wwh div { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: 0.75rem; }
+.wwh b { font-family: var(--font-display); font-weight: 700; font-size: 0.82rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); padding-top: 0.15rem; }
+.pairs { display: grid; gap: 0.6rem; }
+.pair { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 0.6rem; align-items: start; }
+.pair .niet { font-size: 0.9rem; color: var(--bad); background: var(--bad-soft); border-radius: 8px; padding: 0.55rem 0.7rem; text-decoration: line-through; text-decoration-thickness: 1px; }
+.task { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.6rem; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 0.55rem 0.7rem; }
+.tick { width: 1rem; height: 1rem; border-radius: 50%; border: 1.5px solid var(--muted); margin-top: 0.2rem; }
+.tick.none { border-style: dotted; }
+.t-name { font-size: 0.92rem; }
+.t-desc { font-size: 0.84rem; font-style: italic; color: var(--muted); }
+.t-meta { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.15rem; font-size: 0.8rem; align-items: center; }
+.due { color: var(--due); font-weight: 500; }
+.dl { color: var(--accent); font-weight: 500; }
+.colhead { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 0.6rem; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.pattern { display: grid; grid-template-columns: 1.6rem minmax(0, 1fr); gap: 0.3rem 0.6rem; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 0.7rem 0.85rem; font-size: 0.86rem; }
+.pattern .pk { color: var(--accent); font-family: var(--font-mono); font-weight: 500; padding-top: 0.05rem; }
+.pattern code { white-space: normal; overflow-wrap: anywhere; }
+.pattern-title { font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); font-weight: 700; font-family: var(--font-display); }
+
+.rules { display: grid; gap: 0.6rem; padding-left: 1.2rem; margin: 0; }
+.rules li > span { display: block; color: var(--muted); font-size: 0.95rem; }
+.cases { display: grid; gap: 0.75rem; }
+.case { display: grid; gap: 0.35rem; }
+.case h4 { font-size: 1rem; }
+.case ul { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.2rem; font-size: 0.95rem; }
+.callout { border-left: 3px solid var(--accent); padding: 0.2rem 0 0.2rem 0.9rem; color: var(--muted); font-size: 0.92rem; }
+
+/* doelen */
+.goal .area-body { gap: 0.9rem; }
+.goal-block { display: grid; gap: 0.4rem; }
+.glabel { font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.task.sub { margin-left: 1.5rem; }
+.comment { margin-left: 1.5rem; font-size: 0.84rem; color: var(--muted); border-left: 2px solid var(--line); padding: 0.1rem 0 0.1rem 0.6rem; }
+.goal p { font-size: 0.92rem; }
+.goal > summary { flex-wrap: wrap; row-gap: 0.15rem; }
+.goal .area-name { min-width: 11rem; }
+.goal .area-hint { text-align: left; }
+
+/* checklists */
+.checklist { display: grid; gap: 0.5rem; list-style: none; padding: 0; margin: 0; }
+.checklist label { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.7rem; align-items: start; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 0.7rem 0.9rem; cursor: pointer; }
+.checklist input { width: 1.1rem; height: 1.1rem; margin-top: 0.2rem; accent-color: var(--accent); }
+.checklist input:checked + span { color: var(--muted); }
+.checklist .min { font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); margin-left: 0.35rem; }
+.row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; justify-content: space-between; }
+.steps { display: grid; gap: 0.6rem; padding-left: 1.2rem; margin: 0; }
+input[type="search"] { font: inherit; font-size: 0.92rem; width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--fg); }
+.example { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 0.8rem 1rem; display: grid; gap: 0.15rem; font-size: 0.92rem; }
+.example b { font-weight: 600; }
+
+.fhead { display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; align-items: baseline; }
+.fhead h4 { color: var(--fg); }
+.ladder .divider { border: 0; border-top: 1px solid var(--line); margin: 0.25rem 0; }
+.sym td + td { white-space: nowrap; }
+@media (max-width: 34rem) {
+  .pair, .colhead { grid-template-columns: minmax(0, 1fr); }
+  .colhead span:last-child { display: none; }
+  .wwh div { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+  h1 { font-size: 1.65rem; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="eyebrow">Taal · Muziek · Leven</div>
+    <h1>Takensysteem in Todoist</h1>
+  </header>
+
+  <nav class="chapters" aria-label="Hoofdstukken">
+    <a href="#opzet" data-ch="opzet" class="on">Opzet</a>
+    <a href="#taken-schrijven" data-ch="taken-schrijven">Taken schrijven</a>
+    <a href="#doelen" data-ch="doelen">Doelen</a>
+    <a href="#aan-de-slag" data-ch="aan-de-slag">Aan de slag</a>
+    <a href="#bijlage" data-ch="bijlage">Bijlage: situaties</a>
+  </nav>
+
+  <!-- HOOFDSTUK 1: OPZET -->
+  <div class="chapter" id="opzet">
+    <header><span class="chapter-num">Hoofdstuk 1</span><h2>Opzet</h2></header>
+
+    <section>
+      <h3>Hoe het in elkaar zit</h3>
+      <p>Elk eindproject heeft dezelfde vier secties: <b>Gewoontes</b>, <b>Opdrachten</b>, <b>Trajecten</b> en <b>Materiaal</b>. Je maakt ze meteen alle vier aan. Zo ziet elk project er hetzelfde uit.</p>
+      <p>Muziek en Leven splitsen in subprojecten, omdat hun delen onafhankelijk van elkaar zijn. Taal blijft één project, omdat navertellen lezen én spreken is.</p>
+      <p class="note">Een traject is werk met meerdere stappen en een resultaat. «Project» blijft het woord voor de projecten in Todoist zelf: Taal, Muziek, Leven en hun subprojecten.</p>
+    </section>
+
+    <section>
+      <h3>De structuur</h3>
+      <p class="note">Grijze labels zijn secties.</p>
+      <div class="tree">
+        <details class="area">
+          <summary><span class="area-name">Inbox</span><span class="area-hint">geen secties</span></summary>
+          <div class="area-body"><p class="note">Alles wat nieuw is komt hier binnen. Leeg na elke weekronde.</p></div>
+        </details>
+        <details class="area" open>
+          <summary><span class="area-name">Taal</span><span class="area-hint">1 subproject</span></summary>
+          <div class="area-body">
+            <div class="secs"><span class="sec">Gewoontes</span><span class="sec">Opdrachten</span><span class="sec">Trajecten</span></div>
+            <div class="node"><b>Materiaal<span class="tag">subproject</span></b>
+              <div class="secs"><span class="sec">Voor de krant</span><span class="sec">Voor het slapengaan</span><span class="sec">Voor grammatica</span><span class="sec">Om na te vertellen</span><span class="sec">Luisteren</span></div>
+            </div>
+          </div>
+        </details>
+        <details class="area">
+          <summary><span class="area-name">Muziek</span><span class="area-hint">7 subprojecten · geen eigen secties</span></summary>
+          <div class="area-body" id="muziek-body"></div>
+        </details>
+        <details class="area">
+          <summary><span class="area-name">Leven</span><span class="area-hint">5 subprojecten</span></summary>
+          <div class="area-body" id="leven-body">
+            <div class="secs"><span class="sec">Gewoontes</span><span class="sec">Opdrachten</span><span class="sec">Trajecten</span><span class="sec">Materiaal</span></div>
+          </div>
+        </details>
+        <details class="area">
+          <summary><span class="area-name">Ooit</span><span class="area-hint">los van de gebieden</span></summary>
+          <div class="area-body">
+            <div class="secs"><span class="sec">Taal</span><span class="sec">Muziek</span><span class="sec">Leven</span></div>
+            <p class="note">Ideeën voor later. Eén keer per maand bekijken.</p>
+          </div>
+        </details>
+      </div>
+      <p class="note">Bovenaan Taal en Muziek staat de notitietaak «Vaste plekken»: waar woorden, opnames en teksten naartoe gaan. Het is een taak, geen sectie.</p>
+    </section>
+
+    <section>
+      <h3>Labels</h3>
+      <p>Er zijn maar drie labels. De rest regelen secties en filters. Elk extra label is altijd een keuze bij het invoeren.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Label</th><th>Betekenis</th><th>Erop</th><th>Eraf</th></tr></thead>
+        <tbody>
+          <tr><td><span class="chip week">week</span></td><td>Gekozen tot de volgende weekronde</td><td>Bij de weekronde, op opdrachten of stappen. De volgende stap van een traject met <span class="chip week">week</span> erft het meteen</td><td>Volgende weekronde: laten staan of verwijderen</td></tr>
+          <tr><td><span class="chip nu">nu</span></td><td>Materiaal of traject waar je mee bezig bent</td><td>Zodra je eraan begint</td><td>Als het af is; bij materiaal schuift het door naar het volgende uit dezelfde rij</td></tr>
+          <tr><td><span class="chip wacht">wacht op</span></td><td>Je wacht op iemand anders</td><td>Zodra je iets gevraagd hebt. Naam: «[Wie]: [wat]», datum: het moment van navragen</td><td>Als het antwoord er is: afvinken</td></tr>
+        </tbody>
+      </table></div>
+      <p class="note">Bij het invoeren stelt Todoist labels voor na <code>@</code> (of <code>%</code> als jouw versie al is overgestapt), dus onthouden hoeft niet.</p>
+    </section>
+
+    <section>
+      <h3>Tijd en prioriteit</h3>
+      <p>Hoe zuiniger je ze gebruikt, hoe meer je ze vertrouwt. Vier velden, elk met één betekenis.</p>
+      <div class="fields">
+        <div class="field">
+          <div class="fhead"><h4>Prioriteit</h4><span class="ask">Wat gaat voor?</span></div>
+          <div class="ladder">
+            <div class="rung"><span class="prio p1">p1</span><span>Vaste datum: niet verzetten.</span></div>
+            <div class="rung"><span class="prio p2">p2</span><span>Graag deze week. Alleen op taken met <span class="chip week">week</span>, bij de weekronde.</span></div>
+            <hr class="divider">
+            <div class="rung"><span class="prio p3">p3</span><span>Hier heb ik het meeste zin in.</span></div>
+            <div class="rung"><span class="prio p4">p4</span><span>Geen prioriteit.</span></div>
+          </div>
+          <p class="not">Toets voor p1: mag ik deze datum verzetten? Nee → p1. De volgende stap van een traject erft <span class="chip week">week</span> en p2, maar geen p1.</p>
+        </div>
+        <div class="field">
+          <div class="fhead"><h4>Datum</h4><span class="ask">Wanneer doe ik het?</span></div>
+          <p>Een tijd zet je alleen als het moment echt telt. Zonder p1 is een datum een plan dat je mag verzetten, met p1 een vaste afspraak.</p>
+          <p class="not">Valkuil: een datum om iets niet te vergeten. Daarvoor zijn de Inbox en <span class="chip week">week</span>.</p>
+        </div>
+        <div class="field">
+          <div class="fhead"><h4>Deadline</h4><span class="ask">Wanneer moet het uiterlijk af?</span></div>
+          <p>Een grens om af te krijgen. Combineer hem met een startdatum: inleveren vrijdag → deadline vrijdag, datum woensdag. Mag je de deadline niet verzetten, dan krijgt de taak p1.</p>
+          <p class="not">Valkuil: een deadline op iets wat terugkomt, want deadlines keren niet terug (<a href="https://www.todoist.com/help/articles/introduction-to-deadlines-in-todoist-uMqbSLM6U?lang=en">Todoist-hulp</a>).</p>
+        </div>
+        <div class="field">
+          <div class="fhead"><h4>Herinnering</h4><span class="ask">Wanneer mag mijn telefoon me storen?</span></div>
+          <p>Toets: zou ik willen dat iemand me nu op mijn schouder tikt? Alleen bij vaste tijdstippen die je niet mag missen, de weekronde en tijdelijk bij een nieuwe gewoonte.</p>
+          <p class="not">Valkuil: elke melding die je wegveegt, leert je meldingen te negeren.</p>
+        </div>
+      </div>
+      <div class="table-wrap"><table class="sym">
+        <thead><tr><th>Per soort</th><th>Datum</th><th>Deadline</th><th>Herinnering</th><th>Prio</th></tr></thead>
+        <tbody>
+          <tr><td>Inbox-item</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+          <tr><td>Gewoonte</td><td>● ↻</td><td class="no">—</td><td>○</td><td class="no">—</td></tr>
+          <tr><td>Menu-oefening</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td>○ <span class="prio p3">p3</span></td></tr>
+          <tr><td>Opdracht</td><td>○</td><td>○</td><td>○</td><td>○ <span class="prio p1">p1</span> <span class="prio p2">p2</span></td></tr>
+          <tr><td>Traject</td><td class="no">—</td><td>○</td><td class="no">—</td><td>○ <span class="prio p1">p1</span></td></tr>
+          <tr><td>Stap</td><td>○</td><td>○</td><td class="no">—</td><td>○ <span class="prio p1">p1</span> <span class="prio p2">p2</span></td></tr>
+          <tr><td>Materiaal</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td>○ <span class="prio p3">p3</span></td></tr>
+        </tbody>
+      </table></div>
+      <p class="note">● verplicht · ○ aanbevolen als het past · ↻ terugkerend · — nooit</p>
+      <p class="callout"><b>Over tijd?</b> Nooit automatisch doorschuiven. Zonder p1 was het een plan: vandaag nog doen, een nieuwe datum kiezen of de datum weghalen. Met p1 is het een gemiste afspraak: regel het meteen en kijk bij de weekronde waarom het misging.</p>
+    </section>
+
+    <section>
+      <h3>Filters</h3>
+      <p>Zes filters voor het dagelijkse en wekelijkse werk, plus het filter Controle.</p>
+      <h4>Elke dag</h4>
+      <div class="filters">
+        <div class="filter"><span class="fname">Deze week</span><button class="btn copy" data-copy="%week" type="button">Kopieer</button><code class="query">%week</code><span class="when">Als je tijd hebt: kies een opdracht waar je zin in hebt. Wat p1 heeft, gaat voor.</span></div>
+        <div class="filter"><span class="fname">Nu bezig</span><button class="btn copy" data-copy="%nu" type="button">Kopieer</button><code class="query">%nu</code><span class="when">Het materiaal en de trajecten waar je mee bezig bent. Als een gewoonte zegt: pak wat je nu doet.</span></div>
+        <div class="filter"><span class="fname">Oefenmenu</span><button class="btn copy" data-copy="/Gewoontes &amp; geen datum" type="button">Kopieer</button><code class="query">/Gewoontes &amp; geen datum</code><span class="when">Tijd en zin, maar geen concrete opdracht.</span></div>
+      </div>
+      <h4>Bij de weekronde</h4>
+      <div class="filters">
+        <div class="filter"><span class="fname">Lopende trajecten</span><button class="btn copy" data-copy="/Trajecten &amp; !subtaak" type="button">Kopieer</button><code class="query">/Trajecten &amp; !subtaak</code><span class="when">Alle trajecten uit alle gebieden in één lijst.</span></div>
+        <div class="filter"><span class="fname">Deadlines binnenkort</span><button class="btn copy" data-copy="deadline voor: +14 dagen" type="button">Kopieer</button><code class="query">deadline voor: +14 dagen</code><span class="when">Wat de komende twee weken af moet. Werkt «+14 dagen» niet, vul dan een vaste datum in.</span></div>
+        <div class="filter"><span class="fname">Wachten op</span><button class="btn copy" data-copy="%wacht\ op" type="button">Kopieer</button><code class="query">%wacht\ op</code><span class="when">Alles waarvoor je op iemand anders wacht. Werkt de spatie in de labelnaam niet, noem het label dan wacht_op.</span></div>
+        <div class="filter"><span class="fname">Controle</span><button class="btn copy" id="controle-copy" type="button">Kopieer</button><code class="query" id="controle-query" style="white-space: normal; word-break: break-word;"></code><span class="when">Taken die zich níét aan het systeem houden. Het doel is een filter dat zo goed als leeg is.</span></div>
+        <details class="fold">
+          <summary>Wat Controle zoekt</summary>
+          <div class="fold-body">
+            <p>Todoist toont queries met een komma ertussen als losse lijstjes, dus je ziet per regel wat er niet klopt.</p>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Wat klopt er niet</th><th>Query</th></tr></thead>
+              <tbody>
+                <tr><td>Taak zonder sectie</td><td><code>!/* &amp; !#Inbox &amp; !zoek: Vaste plekken</code></td></tr>
+                <tr><td>Gewoonte met een datum die niet terugkeert</td><td><code>/Gewoontes &amp; !geen datum &amp; !terugkerend</code></td></tr>
+                <tr><td>Terugkerende taak buiten Gewoontes</td><td><code>terugkerend &amp; !/Gewoontes</code></td></tr>
+                <tr><td><span class="prio p1">p1</span> zonder datum of deadline</td><td><code>p1 &amp; geen datum &amp; geen deadline</code></td></tr>
+                <tr><td><span class="prio p1">p1</span> op een gewoonte</td><td><code>p1 &amp; terugkerend</code></td></tr>
+                <tr><td><span class="prio p2">p2</span> zonder <span class="chip week">week</span></td><td><code>p2 &amp; !%week</code></td></tr>
+                <tr><td><span class="prio p3">p3</span> buiten de kieslijsten</td><td><code>p3 &amp; !/Materiaal &amp; !#Materiaal &amp; !#Vrije\ tijd &amp; !#Ooit &amp; !/Gewoontes</code></td></tr>
+                <tr><td><span class="prio p3">p3</span> op een gewoonte met datum</td><td><code>p3 &amp; /Gewoontes &amp; !geen datum</code></td></tr>
+                <tr><td><span class="chip week">week</span> op iets wat geen opdracht of stap is</td><td><code>%week &amp; (/Gewoontes | /Materiaal | #Materiaal | #Ooit | #Vrije\ tijd)</code></td></tr>
+                <tr><td><span class="chip week">week</span> op het traject zelf</td><td><code>%week &amp; /Trajecten &amp; !subtaak</code></td></tr>
+                <tr><td><span class="chip nu">nu</span> op iets wat geen materiaal of traject is</td><td><code>%nu &amp; !/Materiaal &amp; !#Materiaal &amp; !/Trajecten</code></td></tr>
+                <tr><td>Datum in Materiaal, Ooit of Vrije tijd</td><td><code>(/Materiaal | #Materiaal | #Ooit | #Vrije\ tijd) &amp; !geen datum</code></td></tr>
+                <tr><td>Label in Ooit</td><td><code>#Ooit &amp; !geen labels</code></td></tr>
+                <tr><td><span class="chip wacht">wacht op</span> zonder navraagdatum</td><td><code>%wacht\ op &amp; geen datum</code></td></tr>
+                <tr><td>Langer dan een week in de Inbox</td><td><code>#Inbox &amp; aangemaakt voor: -7 dagen</code></td></tr>
+                <tr><td>Over tijd</td><td><code>over tijd</code></td></tr>
+              </tbody>
+            </table></div>
+            <p class="note">Wat een filter niet ziet, kijk je zelf na: een traject zonder volgende stap (0 subtaken in Lopende trajecten), een traject zonder Vraag en Resultaat, en vage namen.</p>
+          </div>
+        </details>
+      </div>
+      <p class="note">Labels schrijf je in filters met <code>%</code>. Filterhulp krijg je <a href="https://www.todoist.com/nl/help/articles/introduction-to-filters-V98wIH">hier</a>.</p>
+    </section>
+  </div>
+
+  <!-- HOOFDSTUK 2: TAKEN SCHRIJVEN -->
+  <div class="chapter" id="taken-schrijven">
+    <header><span class="chapter-num">Hoofdstuk 2</span><h2>Taken schrijven</h2></header>
+
+    <section>
+      <h3>Welke soort taak is het?</h3>
+      <p>Alles komt eerst in de Inbox. Bij het sorteren geef je elke taak een plek. Stel jezelf daarvoor de volgende vragen; het eerste antwoord dat een plek aanwijst, beslist.</p>
+      <p>Er zijn zes soorten taken, plus drie plekken buiten de gebieden: Ooit, je notities en je agenda.</p>
+      <div class="wizard" aria-live="polite">
+        <div class="wiz-step" id="wiz-step">Vraag 1</div>
+        <div class="wiz-q" id="wiz-q"></div>
+        <div class="wiz-actions" id="wiz-actions">
+          <button class="btn primary" type="button" id="wiz-yes">Ja</button>
+          <button class="btn" type="button" id="wiz-no">Nee</button>
+          <button class="btn" type="button" id="wiz-back" hidden>Vorige vraag</button>
+        </div>
+        <div class="wiz-result" id="wiz-result" hidden></div>
+      </div>
+    </section>
+
+    <section>
+      <h3>Drie regels die altijd gelden</h3>
+      <ol class="rules">
+        <li><b>Zorg voor een passende naam.</b>
+          <span>Wat je doet, krijgt een werkwoord: «Krant lezen», niet «Krant».</span>
+          <span>Een traject heet naar het onderwerp.</span>
+          <span>Materiaal heet naar bron en titel.</span></li>
+        <li><b>Je kunt meteen beginnen.</b>
+          <span>Moet je eerst nadenken over wat je gaat doen, dan is de taak nog niet af.</span></li>
+        <li><b>Korte naam, details in de beschrijving.</b>
+          <span>De naam past op één regel op je telefoon.</span></li>
+      </ol>
+    </section>
+
+    <section id="soorten">
+      <h3>Soorten taken</h3>
+      <div class="tabs" role="tablist" aria-label="Soort taak" id="tabs"></div>
+      <p class="note">N naam · B beschrijving · D datum · L label en prioriteit · S subtaak</p>
+      <div id="typecard" class="typecard" role="tabpanel"></div>
+    </section>
+
+    <section>
+      <h3>Aanvullende regels</h3>
+      <p><b>Welke plek?</b> Eerst het gebied, dan het subproject (waar zou je deze taak zoeken?), dan de sectie volgens de soort. Twijfel je tussen twee subprojecten, kies dan het deel dat je met deze taak oefent, niet waar het materiaal vandaan komt.</p>
+      <p><b>Welk label?</b> Kies je een opdracht of stap bij de weekronde voor deze week? Dan krijgt hij <span class="chip week">week</span> en p2; de volgende stap van een traject met <span class="chip week">week</span> erft beide. Materiaal of een traject waar je nu mee bezig bent, krijgt <span class="chip nu">nu</span>. Al het andere krijgt geen label.</p>
+      <p><b>Materiaalregel.</b> Elke rij materiaal hoort bij een gewoonte. Gebruikt geen enkele gewoonte het? Dan is het geen materiaal: zet het in Ooit, bedenk er een gewoonte voor, of gooi het weg.</p>
+      <p><b>Wachten op iemand.</b> Voeg je het label <span class="chip wacht">wacht op</span> toe, begin de naam dan met wie: «Verhuurder: offerte schilderwerk». Als datum zet je het moment van navragen; tot dan zie je de taak niet.</p>
+    </section>
+
+    <section>
+      <h3>Bijzondere gevallen</h3>
+      <div class="cases">
+        <div class="case"><h4>Geen actie? Dan niet in Todoist</h4><p>Todoist is voor wat je gaat doen. Een gedicht dat je mooi vindt, een citaat of een leuk weetje bewaar je in je notities. Wil je er later iets mee doen, zoals uit je hoofd leren of hardop voorlezen, dan wordt het materiaal of een opdracht.</p></div>
+        <div class="case"><h4>Ooit</h4><p>Een apart project naast Taal, Muziek en Leven, met een sectie per gebied. Voor ideeën die je ooit wilt doen, zoals «Brieven uit een boek vertalen», en materiaal dat geen gewoonte gebruikt.</p>
+          <ul><li>Geen datum, deadline of label; alleen p3 op wat het meest kriebelt.</li><li>In de beschrijving: waarom wil ik dit?</li><li>Eén keer per maand: activeren, laten staan of weggooien.</li><li>Drie maanden laten staan zonder dat het kriebelt? Dan mag het weg. Ooit is geen belofte.</li></ul></div>
+        <div class="case"><h4>Ideeën die nog vaag zijn</h4><p>Een idee is geen materiaal: materiaal verbruik je, een idee is input voor een beslissing. Loopt er al een traject over, dan wordt het een opmerking bij dat traject. Heeft het idee perspectief en kan het uitgroeien tot een opdracht of traject, maak er dan een traject van, met als eerste stap «uitzoeken wat dit precies is». Geen van beide? Dan gaat het naar Ooit.</p></div>
+        <div class="case"><h4>Praktische klusjes</h4><p>Iets kopen of een abonnement opzeggen zijn opdrachten in Leven zelf. Opzeggen krijgt een deadline vóór de verlengdatum, een datum een paar dagen eerder en p1. Een grote schoonmaak is een traject met een subtaak per ruimte; komt hij steeds terug, dan wordt het een gewoonte met de ruimtes in de beschrijving.</p></div>
+        <div class="case"><h4>Afspraken horen in je agenda</h4><p>Een concert of een les staat op een vast moment in je agenda. Moet je er iets voor doen («Kaartjes downloaden»), dan wordt dat een opdracht met een datum vlak ervoor en p1.</p></div>
+        <div class="case"><h4>Vrije tijd</h4><p>Plekken om te bezoeken, films en uitjes met je partner zijn een menu waaruit je kiest als je zin hebt. Ze staan in Leven › Vrije tijd, met de secties Samen doen, Plekken om te bezoeken en Films en series: de titel of plek als naam, zonder datum of label, en p3 op waar je het meeste zin in hebt. Plan je iets echt, dan wordt het een opdracht met een datum. Je kunt dit project delen met je partner.</p></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- HOOFDSTUK 3: DOELEN -->
+  <div class="chapter" id="doelen">
+    <header><span class="chapter-num">Hoofdstuk 3</span><h2>Doelen</h2></header>
+
+    <section>
+      <h3>Doel of gewoonte?</h3>
+      <p>Een doel werkt naar één concreet resultaat, met een datum waarop het af is. Een gewoonte herhaal je op vaste momenten; hij loopt tot jij besluit dat hij niet meer nodig is. Een doel kan gewoontes gebruiken: sommige blijven daarna, andere stoppen met het doel.</p>
+      <p>Toetsvraag: herhaal ik dit, of werk ik ergens naartoe?</p>
+    </section>
+
+    <section>
+      <h3>Hoe een doel werkt</h3>
+      <p>Een doel is een traject dat verschillende soorten taken bij elkaar houdt.</p>
+      <ul class="rules">
+        <li><b>Traject met een deadline</b>, in de sectie Trajecten van het juiste (sub)project. De naam is het resultaat in het kort; de deadline is de einddatum, met p1 als je hem niet wilt verzetten.</li>
+        <li><b>Kort in de beschrijving:</b> alleen <i>Vraag</i> en <i>Resultaat</i>, net als bij elk traject.</li>
+        <li><b>Plan in de eerste opmerking:</b> wat je per week doet, en onder <i>Hoort bij</i> links naar de gewoontes en het materiaal van dit doel («Kopieer link naar taak»).</li>
+        <li><b>Alleen de eerstvolgende stap als subtaak.</b></li>
+        <li><b>Oefenen via gewoontes</b>, in de sectie Gewoontes. Laat ze met hetzelfde woord beginnen als het doel («Zang: …», «Zangoefeningen»), dan vind je alles samen met <code>zoek: Zang</code>. Een menu-oefening mag tijdens het doel een gewoonte met vaste dagen worden.</li>
+        <li><b>Materiaal in Materiaal</b>, met <span class="chip nu">nu</span> op wat je nu gebruikt.</li>
+        <li><b>Een meetgewoonte:</b> elke week dezelfde meting, als opmerking bij het traject. Afgevinkte taken laten zien dát je oefent; de meting laat zien of je beter wordt.</li>
+      </ul>
+      <div style="display:grid;gap:0.35rem"><div class="pattern-title">Patroon</div><div class="pattern"><span class="pk">N</span><code>[Onderwerp]: [resultaat in een paar woorden]</code><span class="pk">B</span><code>Vraag: … Resultaat: …</code><span class="pk">D</span><code>deadline: de einddatum · p1 als je hem niet wilt verzetten</code><span class="pk">S</span><code>alleen de eerstvolgende stap</code><span class="pk">O</span><code>Plan: wk 1 … · wk 2 … Hoort bij: [links]</code></div></div>
+    </section>
+
+    <section>
+      <h3>In je ritme</h3>
+      <ul class="rules">
+        <li><b>Weekronde:</b> lees bij elk doel de laatste meting. Gaat het sneller of trager dan gepland, pas dan het plan aan, niet de deadline.</li>
+        <li><b>Op de deadline:</b> vergelijk de eerste en de laatste meting, zet wat je geleerd hebt in Mijn methode en sluit het traject. Beslis per gewoonte: houden of stoppen. De meetgewoonte stopt altijd.</li>
+        <li><b>Liefst niet meer dan twee doelen tegelijk.</b></li>
+      </ul>
+      <div class="filter"><span class="fname">Doelen (optioneel)</span><button class="btn copy" data-copy="/Trajecten &amp; !subtaak &amp; !geen deadline" type="button">Kopieer</button><code class="query">/Trajecten &amp; !subtaak &amp; !geen deadline</code><span class="when">Alle lopende doelen, want alleen doelen hebben een deadline op het traject.</span></div>
+    </section>
+
+    <section>
+      <h3>Voorbeelden</h3>
+      <p class="note">Zes voorbeelden om het patroon te zien, met een termijn in weken in plaats van een datum. Het zijn geen afspraken: je kiest zelf wanneer je een doel start, en wat je voor later wilt bewaren, zet je in Ooit.</p>
+      <div class="tree" id="goals"></div>
+    </section>
+  </div>
+
+  <!-- HOOFDSTUK 4: AAN DE SLAG -->
+  <div class="chapter" id="aan-de-slag">
+    <header><span class="chapter-num">Hoofdstuk 4</span><h2>Aan de slag</h2></header>
+
+    <section>
+      <h3>Elke dag</h3>
+      <ol class="steps">
+        <li><b>'s Ochtends: Vandaag.</b> Gewoontes afwerken. Staat er «uit Materiaal» in de beschrijving? Open Nu bezig en pak het bovenste.</li>
+        <li><b>Vrije tijd: Deze week.</b> Kies een opdracht waar je zin in hebt; wat p1 heeft, gaat voor. Nergens zin in? Open het Oefenmenu.</li>
+        <li><b>Stap van een traject af: meteen de volgende erachter.</b> Als subtaak onder het traject, niet in de Inbox. Had de vorige stap <span class="chip week">week</span>, dan krijgt de nieuwe <span class="chip week">week</span> en p2.</li>
+        <li><b>Idee, artikel, link: Inbox.</b> Zonder project, datum of label.</li>
+        <li><b>Gedachte tijdens een traject:</b> opmerking bij het traject. Bij de weekronde gaat het naar Mijn methode.</li>
+        <li><b>'s Avonds, als je wilt: Inbox sorteren</b> (2–5 min). Je bepaalt soort en plek met de keuzehulp. Ligt een datum vast, dan krijgt de taak meteen p1. Verder kies je niet: nieuwe dingen krijgen geen <span class="chip week">week</span>.</li>
+      </ol>
+      <p class="callout">Doordeweeks niet doen: nieuwe dingen <span class="chip week">week</span> geven (de volgende stap van een traject is de uitzondering) en secties ombouwen.</p>
+    </section>
+
+    <section>
+      <div class="row"><h3>Weekronde</h3><button class="btn" type="button" data-reset="review">Opnieuw beginnen</button></div>
+      <p>Zondag, een kwartier, vijf stappen. Vink af terwijl je bezig bent; je vinkjes blijven in deze browser bewaard.</p>
+      <ul class="checklist" data-list="review">
+        <li><label><input type="checkbox" id="rv1"><span><b>Inbox leeg</b><span class="min">5 min</span><br>Per item: weg, naar de juiste materiaalrij, opdracht of stap. Vage taken herschrijven. Vaste datum? Meteen p1.</span></label></li>
+        <li><label><input type="checkbox" id="rv2"><span><b>Trajecten langs</b><span class="min">5 min</span><br>Open Lopende trajecten. Elk traject precies één volgende stap, en <span class="chip nu">nu</span> op wat je doet? Afgerond traject sluiten. Bij een doel: laatste meting lezen en het plan bijstellen.</span></label></li>
+        <li><label><input type="checkbox" id="rv3"><span><b>Inzichten overzetten</b><span class="min">2 min</span><br>Opmerkingen naar Mijn methode. Verandert een inzicht een gewoonte, pas de beschrijving aan.</span></label></li>
+        <li><label><input type="checkbox" id="rv4"><span><b>Week kiezen</b><span class="min">4 min</span><br>Oude <span class="chip week">week</span>-labels en <span class="prio p2">p2</span> eraf; <span class="prio p1">p1</span> blijft zolang de datum staat. Open Deadlines binnenkort: wat deze of volgende week vastligt, krijgt <span class="chip week">week</span> en een startdatum. Vul aan tot 5–7 taken met <span class="chip week">week</span> + <span class="prio p2">p2</span>. Heeft elke gewoonte «uit Materiaal» iets met <span class="chip nu">nu</span>?</span></label></li>
+        <li><label><input type="checkbox" id="rv5"><span><b>Terugblik</b><span class="min">2 min</span><br>Schrijf in een opmerking bij «Weekronde» wat je bereikt hebt, een zin per gebied. Open Wachten op en vraag na wat over datum is.</span></label></li>
+      </ul>
+      <p class="callout"><b>Maandronde</b> (eerste weekronde van de maand, 10 minuten extra): Ooit langs (activeren, laten staan of weggooien; p3 op wat het meest kriebelt), je gewoontes langs (houden, aanpassen of stoppen), het logboek en Mijn methode teruglezen, en het filter Controle openen.</p>
+      <p class="note">Langer dan twintig minuten bezig? Dan staat er te veel in de Inbox of in je trajecten. Schrappen, niet langer sorteren.</p>
+    </section>
+
+    <section>
+      <h3>Mijn methode en logboek</h3>
+      <p><b>Waar inzichten landen.</b> Een inzicht is wat je leert uit boeken, lessen en trajecten, of wat je merkt bij het oefenen: wat werkt, wat niet en wat je anders wilt doen. Het landt op twee plekken.</p>
+      <p><b>Waar je het toepast:</b> in de beschrijving van de gewoonte of menu-oefening die het verandert, zodat je het ziet op het moment dat je het nodig hebt. <b>Waar je het bewaart:</b> in «Mijn methode», een notitie per gebied, zoals «Mijn methode — Taal», met de link in «Vaste plekken».</p>
+      <div class="example"><b>Na elk nieuwsartikel één vraag stellen: wiens belang dient dit?</b><span><i>Waarom:</i> ik las wel veel, maar nam de framing over.</span><span><i>Bron:</i> traject Kritisch nieuws lezen, november 2026.</span><span><i>Toegepast in:</i> gewoonte «Krant lezen».</span></div>
+      <p>Bij elk nieuw traject is de eerste subtaak «Mijn methode lezen».</p>
+      <p><b>Het logboek</b> staat als opmerking bij de terugkerende taak «Weekronde». Een terugkerende taak houdt zijn opmerkingen, dus week na week groeit je lijst. Schrijf resultaten, geen taken, met een zin per gebied.</p>
+      <div class="example"><b>Week 46</b><span>Taal: eerste brief vertaald, vier keer de krant gelezen.</span><span>Muziek: blues in A opgenomen.</span><span>Leven: budget afgerond.</span></div>
+      <p class="note">Elke maand lees je het logboek en Mijn methode terug. Zo zie je vooruitgang die je per week niet opmerkt.</p>
+    </section>
+
+    <section>
+      <div class="row"><h3>Na 2–3 weken: werkt het?</h3><button class="btn" type="button" data-reset="eval">Wissen</button></div>
+      <p>De eerste weken bouw je niks om. Daarna repareer je alleen wat op «nee» uitkomt.</p>
+      <ul class="checklist" data-list="eval">
+        <li><label><input type="checkbox" id="ev1"><span>Zet ik taken erin zonder te twijfelen?</span></label></li>
+        <li><label><input type="checkbox" id="ev2"><span>Weet ik elke dag wat ik ga doen?</span></label></li>
+        <li><label><input type="checkbox" id="ev3"><span>Doe ik de weekronde, en ben ik binnen 15–20 minuten klaar?</span></label></li>
+        <li><label><input type="checkbox" id="ev4"><span>Veranderen inzichten uit trajecten echt mijn gewoontes?</span></label></li>
+        <li><label><input type="checkbox" id="ev5"><span>Blijven de materiaalrijen kort (3–10 items)?</span></label></li>
+        <li><label><input type="checkbox" id="ev6"><span>Is het filter Controle bijna leeg?</span></label></li>
+      </ul>
+      <p class="note">Open vraag: Taal toch per vaardigheid opsplitsen? Verdeel je laatste 10–15 taaltaken over de vaardigheden. Valt een derde of meer in twee hokjes, dan blijft Taal één project.</p>
+    </section>
+  </div>
+
+  <!-- BIJLAGE: SITUATIES -->
+  <div class="chapter" id="bijlage">
+    <header><span class="chapter-num">Bijlage</span><h2>Situaties</h2></header>
+    <section>
+      <h3>Wat doe je wanneer?</h3>
+      <input type="search" id="sit-search" placeholder="Zoek een situatie, bijvoorbeeld «boek»" aria-label="Zoek een situatie">
+      <div class="table-wrap"><table>
+        <thead><tr><th>Situatie</th><th>Meteen</th><th>Bij de weekronde</th></tr></thead>
+        <tbody id="sit-body"></tbody>
+      </table></div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+  /* structuur */
+  var FOUR = ["Gewoontes", "Opdrachten", "Trajecten", "Materiaal"];
+  function secs() { return '<div class="secs">' + FOUR.map(function (s) { return '<span class="sec">' + s + '</span>'; }).join("") + '</div>'; }
+  function nodes(id, names) {
+    document.getElementById(id).insertAdjacentHTML("beforeend", names.map(function (n) { return '<div class="node"><b>' + n + '<span class="tag">subproject</span></b>' + secs() + '</div>'; }).join(""));
+  }
+  nodes("muziek-body", ["Theorie", "Instrument", "Klank", "Uitzoeken", "Imiteren", "Transformeren", "Creëren"]);
+  nodes("leven-body", ["Sport", "Financiën", "Systemen", "Kennis"]);
+  document.getElementById("leven-body").insertAdjacentHTML("beforeend", '<div class="node"><b>Vrije tijd<span class="tag">subproject</span></b><div class="secs"><span class="sec">Samen doen</span><span class="sec">Plekken om te bezoeken</span><span class="sec">Films en series</span></div></div>');
+
+  /* filter Controle als één regel */
+  var CONTROLE = [
+    "!/* & !#Inbox & !zoek: Vaste plekken",
+    "/Gewoontes & !geen datum & !terugkerend",
+    "terugkerend & !/Gewoontes",
+    "p1 & geen datum & geen deadline",
+    "p1 & terugkerend",
+    "p2 & !%week",
+    "p3 & !/Materiaal & !#Materiaal & !#Vrije\\ tijd & !#Ooit & !/Gewoontes",
+    "p3 & /Gewoontes & !geen datum",
+    "%week & (/Gewoontes | /Materiaal | #Materiaal | #Ooit | #Vrije\\ tijd)",
+    "%week & /Trajecten & !subtaak",
+    "%nu & !/Materiaal & !#Materiaal & !/Trajecten",
+    "(/Materiaal | #Materiaal | #Ooit | #Vrije\\ tijd) & !geen datum",
+    "#Ooit & !geen labels",
+    "%wacht\\ op & geen datum",
+    "#Inbox & aangemaakt voor: -7 dagen",
+    "over tijd"
+  ].join(", ");
+  document.getElementById("controle-query").textContent = CONTROLE;
+  document.getElementById("controle-copy").dataset.copy = CONTROLE;
+
+  /* meta-regel van een voorbeeldtaak: "#week · !p2 · wo" */
+  function metaHtml(m) {
+    if (!m) return "";
+    return m.split(" · ").map(function (p) {
+      if (p.charAt(0) === "#") return '<span class="chip ' + p.slice(1) + '">' + esc(p.slice(1)) + '</span>';
+      if (p.charAt(0) === "!") return '<span class="prio ' + p.slice(1) + '">' + esc(p.slice(1)) + '</span>';
+      if (p.indexOf("Deadline") === 0) return '<span class="dl">' + esc(p) + '</span>';
+      return '<span class="due">' + esc(p) + '</span>';
+    }).join("");
+  }
+  function taskHtml(lines, cls) {
+    var name = lines[0], desc = lines[1], meta = lines[2];
+    return '<div class="task' + (cls ? " " + cls : "") + '"><span class="tick' + (cls === "mat" ? " none" : "") + '" aria-hidden="true"></span><div>' +
+      '<div class="t-name">' + esc(name) + '</div>' +
+      (desc ? '<div class="t-desc">' + esc(desc) + '</div>' : '') +
+      (meta ? '<div class="t-meta">' + metaHtml(meta) + '</div>' : '') +
+      '</div></div>';
+  }
+
+  /* soorten taken */
+  var TYPES = [
+    { id: "inbox", name: "Inbox-item", plek: "Inbox", datum: "geen", label: "geen",
+      waarom: "De Inbox is er om niks te vergeten, niet om te sorteren. Elke seconde formuleren maakt de kans groter dat je het niet opschrijft.",
+      tip: "Mag vaag, mag met een vraagteken. Formuleren doe je bij het sorteren.",
+      ex: [["Uitzoeken of shadowing werkt voor uitspraak op C1-niveau, traject maken in Taal", ["Shadowing proberen?"]],
+           ["Niks opschrijven, omdat je niet weet waar het hoort", ["Artikel Volkskrant over wonen"]]] },
+    { id: "gewoonte", name: "Gewoonte", plek: "Gewoontes", datum: "↻", label: "geen",
+      waarom: "Moet je elke keer bedenken wat je pakt, dan wordt dat een drempel en sla je hem over. De maat maakt hem klein genoeg voor een drukke dag.",
+      tip: "Een gewoonte is geen belofte voor altijd: bij de maandronde mag je hem aanpassen of stoppen. Een deadline krijgt hij niet; die hoort bij het traject. Moet hij vanzelf stoppen, bijvoorbeeld bij een doel, geef de herhaling dan een einddatum: «elke dag tot 31 dec».",
+      ex: [["Grammatica", ["Grammatica oefenen: 1 les", "Uit: lesboek met label nu", "↻ ma, wo, vr"]],
+           ["Meer luisteren", ["Podcast luisteren: 20 minuten", "Uit: bovenste in Materiaal › Luisteren", "↻ di, do"]],
+           ["Elke dag sporten", ["Rekken: 10 minuten", "Uit: vaste oefeningen van het trainingsprogramma", "↻ elke dag"]]] },
+    { id: "menu", name: "Menu-oefening", plek: "Gewoontes", datum: "geen", label: "kan p3",
+      waarom: "Je pakt een menu-oefening als je er zin in hebt. Moet je dan eerst een plan maken, dan is die zin zo weer weg.",
+      tip: "Schrijf het recept zo dat je het met je ogen half dicht kunt volgen. Met «* » voor de naam wordt hij onafvinkbaar.",
+      ex: [["Spreken oefenen", ["Artikel hardop navertellen", "Uit: Materiaal › Om na te vertellen · Doen: 2 minuten navertellen en opnemen · Naar: «Spreken»", "!p3"]],
+           ["Gehoor", ["Melodie op gehoor uitzoeken", "Uit: liedje in Materiaal · Naar: «Muziek/Opnames»"]]] },
+    { id: "opdracht", name: "Opdracht", plek: "Opdrachten", datum: "kan vaste dag", label: "kan p1",
+      waarom: "Je kiest een opdracht tussen andere dingen door. Is hij vaag, dan kies je hem niet, of je weet niet wanneer je klaar bent.",
+      tip: "Toets: kan ik nu beginnen, en weet ik wanneer het af is? Geen duidelijk onderwerp of waarheen? Laat dat deel weg: «Fietsbel kopen bij de fietsenmaker».",
+      ex: [["Vragen voor de les", ["Les donderdag: vragen opschrijven → «Schrijven»", null, "wo · !p1"]],
+           ["Woorden uit hoofdstuk 3", ["Het diner, h. 3: nieuwe woorden opschrijven → Mochi", "Alleen woorden die ik actief wil gebruiken", "#week · !p2"]],
+           ["Compressor", ["Zang: compressor instellen → preset «Zang basis»", "Beginnen bij het standaardpreset van de plug-in"]]] },
+    { id: "project", name: "Traject", plek: "Trajecten", datum: "kan deadline", label: "nu, kan p1",
+      waarom: "Zonder vraag weet je niet waarom je eraan werkt; zonder resultaat stopt het nooit. Trajecten die nooit dichtgaan, maken je lijsten zwaar.",
+      tip: "Maak het resultaat concreet: een regel in Mijn methode, een nieuwe gewoonte, een opname.",
+      ex: [["Beter leren lezen", ["Kritisch nieuws lezen", "Vraag: hoe analyseer ik een artikel dieper? Resultaat: één vaste vraag in de gewoonte «Krant lezen»"]],
+           ["Gitaarsound", ["Mijn gitaarklank", "Vraag: welke klank past bij mijn spel? Resultaat: 2–3 opgeslagen presets"]]] },
+    { id: "stap", name: "Stap", plek: "subtaak", datum: "kan vaste dag", label: "kan p1",
+      waarom: "Een traject komt alleen vooruit via stappen. Is de stap te groot of te vaag, dan blijft het hele traject hangen.",
+      tip: "Vraag bij het resultaat: wat is het allereerste wat ik kan doen? Rond je een stap af, zet de volgende dan meteen als subtaak onder het traject.",
+      ex: [["Fluent Forever lezen", ["Fluent Forever: deel 2 lezen", "Ideeën meteen als opmerking bij het traject", "#week · !p2"]],
+           ["Programma uitzoeken", ["Trainingsprogramma: drie programma's vergelijken op duur en frequentie", "Resultaat: één keuze om mee te beginnen", "#week · !p2"]],
+           ["Onderzoek doen", ["Kritisch denken: 2–3 artikelen zoeken → Materiaal", null, "#week · !p2"]]] },
+    { id: "materiaal", name: "Materiaal", plek: "Materiaal", datum: "geen", label: "nu, kan p3",
+      waarom: "Je kiest materiaal op het moment dat een gewoonte erom vraagt. Dan wil je in één oogopslag zien wat het is.",
+      tip: "Geen werkwoord: materiaal is geen taak. Zet Materiaal op sorteren op prioriteit, dan staat p3 bovenaan.",
+      ex: [["Leuk artikel", ["NOS: verkiezingen in de provincies", "Link naar het artikel", "!p3"]],
+           ["Dat boek van de docent", ["Herman Koch: Het diner", "Aangeraden door de docent", "#nu"]],
+           ["Video", ["Docent: video over irrealis", "Link naar de video"]]] }
+  ];
+  var ROWS = [["inbox"], ["gewoonte", "menu"], ["opdracht"], ["project", "stap"], ["materiaal"]];
+  var PAT = {
+    inbox: [["N", "[wat er in je opkomt, in één zin]"]],
+    gewoonte: [["N", "[Wat je doet]: [maat]"], ["B", "Uit: [bron] · Naar: [waar het resultaat heen gaat]"], ["D", "↻ [dagen] [tijd, alleen als het moment telt]"]],
+    menu: [["N", "[Wat je doet]"], ["B", "Uit: [bron] · Doen: [wat en hoe lang] · Naar: [waarheen]"], ["L", "kan p3"]],
+    opdracht: [["N", "[Onderwerp]: [wat je doet] → [waarheen]"], ["B", "vrij"], ["D", "kan vaste dag"], ["L", "kan p1"]],
+    project: [["N", "[Onderwerp]"], ["B", "Vraag: [wat wil je weten of kunnen]? Resultaat: [wat je concreet wilt bereiken]"], ["D", "kan deadline"], ["L", "nu als je eraan werkt · kan p1"], ["S", "alleen de eerstvolgende stap"]],
+    stap: [["N", "[Onderwerp]: [wat je doet] → [waarheen]"], ["B", "alleen als nodig"], ["D", "kan vaste dag"], ["L", "kan p1"]],
+    materiaal: [["N", "[Bron]: [titel of onderwerp]"], ["B", "link, als die er is"], ["L", "nu · kan p3"]]
+  };
+  function typeById(id) { return TYPES.filter(function (x) { return x.id === id; })[0]; }
+  function patternHtml(id) {
+    var rows = PAT[id]; if (!rows) return "";
+    return '<div class="pattern-title">Patroon</div><div class="pattern">' + rows.map(function (r) {
+      return '<span class="pk">' + r[0] + '</span><code>' + esc(r[1]) + '</code>';
+    }).join("") + '</div>';
+  }
+  var tabsEl = document.getElementById("tabs"), card = document.getElementById("typecard");
+  tabsEl.innerHTML = ROWS.map(function (row) {
+    return '<div class="tabrow" role="presentation">' + row.map(function (id) {
+      var t = typeById(id);
+      return '<button class="tab" role="tab" type="button" id="tab-' + t.id + '" aria-selected="false" data-type="' + t.id + '">' + t.name + '</button>';
+    }).join("") + '</div>';
+  }).join("");
+  var tabBtns = Array.prototype.slice.call(tabsEl.querySelectorAll(".tab"));
+  function showType(id) {
+    var t = typeById(id) || TYPES[0];
+    tabBtns.forEach(function (b) { b.setAttribute("aria-selected", String(b.dataset.type === t.id)); });
+    card.setAttribute("aria-labelledby", "tab-" + t.id);
+    card.innerHTML =
+      '<h4>' + esc(t.name) + '</h4>' +
+      '<div style="display:grid;gap:0.35rem">' + patternHtml(t.id) + '</div>' +
+      '<p class="factline"><b>Plek</b> ' + esc(t.plek) + ' · <b>Datum</b> ' + esc(t.datum) + ' · <b>Label</b> ' + esc(t.label) + '</p>' +
+      '<div class="wwh">' +
+        '<div><b>Waarom</b><p>' + esc(t.waarom) + '</p></div>' +
+        '<div><b>Tip</b><p>' + esc(t.tip) + '</p></div>' +
+      '</div>' +
+      '<div class="pairs"><div class="colhead"><span>Niet</span><span>Wel</span></div>' +
+        t.ex.map(function (e) { return '<div class="pair"><div class="niet">' + esc(e[0]) + '</div>' + taskHtml(e[1], t.id === "materiaal" ? "mat" : "") + '</div>'; }).join("") +
+      '</div>';
+  }
+  tabsEl.addEventListener("click", function (e) { var b = e.target.closest(".tab"); if (b) showType(b.dataset.type); });
+  tabsEl.addEventListener("keydown", function (e) {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    var i = tabBtns.indexOf(document.activeElement);
+    if (i < 0) return;
+    var n = tabBtns[(i + (e.key === "ArrowRight" ? 1 : -1) + tabBtns.length) % tabBtns.length];
+    n.focus(); showType(n.dataset.type);
+  });
+  showType("inbox");
+
+  /* keuzehulp */
+  var SPECIAL = {
+    notities: ["Notities", "Geen actie, dus niet in Todoist. Bewaar het in je notitie-app. Wil je er later iets mee doen, dan wordt het materiaal of een opdracht."],
+    ooit: ["Ooit", "Zet het in het project Ooit, in de sectie van het gebied, met in de beschrijving waarom je het wilt. Eén keer per maand kijk je of het tijd is."],
+    agenda: ["Agenda", "Een afspraak hoort in je agenda, niet in Todoist. Moet je er iets voor doen, dan wordt dat een opdracht met een datum vlak ervoor en p1."],
+    twijfel: ["Nog niet duidelijk", "Maak er een traject van met als eerste stap «uitzoeken wat dit precies is», of laat het tot de volgende weekronde in de Inbox staan."]
+  };
+  /* [vraag, bij ja, bij nee]; null = door naar de volgende vraag */
+  var Q = [
+    ["Ga je er iets mee doen?", null, "notities"],
+    ["Is het een afspraak op een vast moment, zoals een concert of een les?", "agenda", null],
+    ["Is het een ding om te lezen, kijken, luisteren of bezoeken (artikel, boek, lesboek, etude, film, plek)?", "materiaal", null],
+    ["Wil je er nu of binnenkort mee aan de slag?", null, "ooit"],
+    ["Komt het op vaste dagen terug?", "gewoonte", null],
+    ["Wil je het vaker doen, maar alleen als je tijd en zin hebt?", "menu", null],
+    ["Kun je het in één keer afmaken, en weet je hoe?", "opdracht", null],
+    ["Zijn er meerdere stappen nodig, is het einde onduidelijk, of moet je eerst iets uitzoeken?", "project", "twijfel"]
+  ];
+  var PLEK = { stap: "subtaak onder het traject", materiaal: "Materiaal (bij Taal: de sectie van de gewoonte die het gebruikt)" };
+  var EXTRA = {
+    project: " Zet er als subtaak alleen de eerstvolgende stap onder.",
+    materiaal: " Is het voor ontspanning, zoals een film, plek of uitje? Dan hoort het in Leven › Vrije tijd. Gebruikt geen gewoonte het, dan gaat het naar Ooit.",
+    opdracht: " Ligt de datum vast, dan p1. Wacht je op iemand anders, voeg dan het label wacht op toe."
+  };
+  var qi = 0, trail = [];
+  var stepEl = document.getElementById("wiz-step"), qEl = document.getElementById("wiz-q"),
+      actEl = document.getElementById("wiz-actions"), resEl = document.getElementById("wiz-result"),
+      backBtn = document.getElementById("wiz-back");
+  function renderQ() {
+    stepEl.textContent = "Vraag " + (qi + 1) + " van " + Q.length;
+    qEl.textContent = Q[qi][0];
+    backBtn.hidden = trail.length === 0;
+    actEl.hidden = false; resEl.hidden = true; qEl.hidden = false; stepEl.hidden = false;
+  }
+  function result(key) {
+    actEl.hidden = true; qEl.hidden = true; stepEl.hidden = true; resEl.hidden = false;
+    var again = '<button class="btn" type="button" id="wiz-undo">Vorige vraag</button><button class="btn" type="button" id="wiz-again">Opnieuw</button>';
+    if (SPECIAL[key]) {
+      resEl.innerHTML = '<strong>' + esc(SPECIAL[key][0]) + '</strong><p>' + esc(SPECIAL[key][1]) + '</p><div class="wiz-actions">' + again + '</div>';
+      return;
+    }
+    var t = typeById(key);
+    resEl.innerHTML = '<strong>' + esc(t.name) + '</strong><p>Plek: ' + esc(PLEK[key] || t.plek) + '.' + esc(EXTRA[key] || "") + '</p>' + patternHtml(t.id) +
+      '<div class="wiz-actions"><button class="btn primary" type="button" id="wiz-show" data-type="' + t.id + '">Zo formuleer je hem</button>' + again + '</div>';
+  }
+  function answer(yes) {
+    var target = yes ? Q[qi][1] : Q[qi][2];
+    trail.push(qi);
+    if (target) { result(target); return; }
+    qi++;
+    renderQ();
+  }
+  function back() {
+    if (!trail.length) return;
+    qi = trail.pop();
+    renderQ();
+  }
+  document.getElementById("wiz-yes").addEventListener("click", function () { answer(true); });
+  document.getElementById("wiz-no").addEventListener("click", function () { answer(false); });
+  backBtn.addEventListener("click", back);
+  resEl.addEventListener("click", function (e) {
+    if (e.target.id === "wiz-again") { qi = 0; trail = []; renderQ(); document.getElementById("wiz-yes").focus(); }
+    if (e.target.id === "wiz-undo") { back(); document.getElementById("wiz-yes").focus(); }
+    if (e.target.id === "wiz-show") {
+      showType(e.target.dataset.type);
+      document.getElementById("soorten").scrollIntoView({ block: "start" });
+      var tb = document.getElementById("tab-" + e.target.dataset.type); if (tb) tb.focus({ preventScroll: true });
+    }
+  });
+  renderQ();
+
+  /* voorbeelden van doelen */
+  var GOALS = [
+    { title: "Takensysteem in gebruik nemen", hint: "4 weken · Leven › Systemen",
+      project: ["Takensysteem: volledig in gebruik", "Vraag: werkt deze opzet voor mij in het dagelijks gebruik? Resultaat: alle gebieden in de nieuwe opzet, vier weekrondes gedaan en het filter Controle bijna leeg (hooguit 5 taken).", "Deadline over 4 weken"],
+      comment: "Plan: wk 1 filters en Taal · wk 2 Muziek · wk 3 Leven en Ooit · wk 4 Controle leegmaken en evalueren. Hoort bij: gewoonte «Weekronde».",
+      step: ["Filters: de zes vaste filters en Controle aanmaken", null, "#week · !p2"],
+      habitNote: "De bestaande «Weekronde»; noteer tijdens het doel bij elke weekronde het aantal taken in Controle en hoe lang de weekronde duurde.",
+      meting: "Taken in Controle en minuten per weekronde.", blijft: "De weekronde." },
+    { title: "Zang", hint: "4 weken · Muziek › Instrument",
+      project: ["Zang: één liedje zuiver opnemen", "Vraag: kan ik een eenvoudig liedje zuiver en met steun zingen? Resultaat: een opname van één liedje die ik durf te laten horen.", "Deadline over 4 weken"],
+      comment: "Plan: wk 1 adem en houding · wk 2 toonhoogte · wk 3 het liedje leren · wk 4 opnemen. Hoort bij: «Zangoefeningen», «Zangmeting», «YouTube: zangcursus voor beginners».",
+      step: ["Beginopname: liedje en glijtoon opnemen → «Muziek/Opnames»", null, "#week · !p2"],
+      habits: [["Zangoefeningen: 15 minuten", "Uit: oefening van deze week uit het plan, video met label nu", "↻ elke dag"],
+               ["Zangmeting: 1 opname", "Uit: hetzelfde liedje · Naar: «Muziek/Opnames»; bereik, toon vasthouden en nazingen als opmerking bij het traject", "↻ elke zaterdag"]],
+      material: [["YouTube: zangcursus voor beginners", null, "#nu"], ["[Artiest]: [liedje]"]],
+      meting: "Bereik, seconden toon vasthouden, tonen van de tien zuiver nagezongen.", blijft: "«Zangoefeningen: 15 minuten»." },
+    { title: "Podcast", hint: "6 weken · Taal",
+      project: ["Podcast: één aflevering van 10 minuten", "Vraag: kan ik 10 minuten vloeiend over één onderwerp praten zonder uitgeschreven tekst? Resultaat: één aflevering van 10 minuten, gesproken van een briefje met trefwoorden en opgenomen in hooguit drie stukken.", "Deadline over 6 weken"],
+      comment: "Plan: wk 1 onderwerp kiezen · wk 2 erover lezen · wk 3 opbouw in drie delen · wk 4 delen oefenen · wk 5 proefopname · wk 6 opnemen. Hoort bij: «Podcast navertellen», «Podcast meten», Materiaal › Om na te vertellen.",
+      step: ["Podcast: onderwerp kiezen en 3 minuten beginopname maken → «Spreken»", null, "#week · !p2"],
+      habits: [["Podcast navertellen: 10 minuten", "Uit: artikel over je onderwerp in Materiaal › Om na te vertellen · Naar: «Spreken»", "↻ ma, wo, vr"],
+               ["Podcast meten: 3 minuten spreken", "Uit: je trefwoordenbriefje · Naar: «Spreken»; pauzes langer dan 3 seconden als opmerking bij het traject", "↻ elke zaterdag"]],
+      meting: "Pauzes langer dan 3 seconden per 3 minuten.", blijft: "Navertellen, 3× per week, zonder «Podcast» ervoor." },
+    { title: "Liedjes op gehoor", hint: "6 weken · Muziek › Uitzoeken",
+      project: ["Uitzoeken: drie liedjes op gehoor", "Vraag: kan ik een liedje uitzoeken zonder akkoordenschema of tabs? Resultaat: drie opnames van zelf uitgezochte liedjes, melodie en akkoorden.", "Deadline over 6 weken"],
+      comment: "Plan: wk 1–2 liedje 1 · wk 3–4 liedje 2 · wk 5–6 liedje 3; pas na je opname vergelijk je met een schema. Hoort bij: «Uitzoeken: 20 minuten», drie liedjes in Materiaal.",
+      step: ["Liedjes: drie kiezen, van makkelijk naar moeilijk → Materiaal", null, "#week · !p2"],
+      habits: [["Uitzoeken: 20 minuten", "Uit: liedje met label nu · Naar: «Muziek/Opnames»", "↻ di, do, za"]],
+      meting: "Per liedje de uren die je nodig had en het aantal verbeteringen na vergelijken met een schema.", blijft: "De menu-oefening «Melodie op gehoor uitzoeken»." },
+    { title: "Schrijven met minder fouten", hint: "6 weken · Taal",
+      project: ["Schrijven: een derde minder fouten", "Vraag: welke fouten maak ik steeds, en kan ik ze afleren? Resultaat: een tekst van 250 woorden met een derde minder fouten per 100 woorden dan in week 1, en mijn vijf vaakste fouten met de regel erbij in Mijn methode.", "Deadline over 6 weken"],
+      comment: "Plan: wk 1 beginmeting · wk 2–5 elke week een tekst, met één vaste fout als aandachtspunt · wk 6 eindtekst. Hoort bij: «Schrijven: 250 woorden».",
+      step: ["Beginmeting: tekst van 250 woorden schrijven en laten corrigeren → «Schrijven»", null, "#week · !p2"],
+      habits: [["Schrijven: 250 woorden", "Uit: onderwerp uit de krant van deze week · Naar: «Schrijven»; laten corrigeren, fouten als opmerking bij het traject", "↻ elke dinsdag"]],
+      meting: "Fouten per 100 woorden (fouten ÷ woorden × 100).", blijft: "De wekelijkse tekst en je foutenlijst in Mijn methode." },
+    { title: "Eerste eigen nummer", hint: "8 weken · Muziek › Creëren",
+      project: ["Eigen nummer: eerste opname van 2–3 minuten", "Vraag: hoe maak ik van losse ideeën een af nummer? Resultaat: een opname van 2–3 minuten met couplet en refrein.", "Deadline over 8 weken"],
+      comment: "Plan: wk 1–2 ideeën kiezen · wk 3–4 structuur · wk 5–6 melodie en tekst · wk 7 arrangement en klank · wk 8 opnemen. Hoort bij: «Eigen nummer: 30 minuten», «Idee opnemen», twee referentienummers in Materiaal.",
+      step: ["Referentienummers: twee kiezen → Materiaal", null, "#week · !p2"],
+      habits: [["Idee opnemen: 1 minuut", "Naar: map «Ideeën»", "↻ elke dag"],
+               ["Eigen nummer: 30 minuten", "Uit: stap van deze week uit het plan · Naar: «Muziek/Opnames»", "↻ di, do, za"]],
+      meting: "Vier mijlpalen (ideeën gekozen, structuur staat, melodie en tekst af, opname af) en het aantal idee-opnames per week.", blijft: "«Idee opnemen: 1 minuut»." }
+  ];
+  document.getElementById("goals").innerHTML = GOALS.map(function (g, i) {
+    var html = '<details class="area goal"><summary><span class="area-name">' + (i + 1) + '. ' + esc(g.title) + '</span><span class="area-hint">' + esc(g.hint) + '</span></summary><div class="area-body">';
+    html += '<div class="goal-block"><span class="glabel">Traject</span>' + taskHtml(g.project) +
+      '<div class="comment"><i>Opmerking:</i> ' + esc(g.comment) + '</div>' + taskHtml(g.step, "sub") + '</div>';
+    if (g.habitNote) html += '<div class="goal-block"><span class="glabel">Gewoonte</span><p>' + esc(g.habitNote) + '</p></div>';
+    if (g.habits) html += '<div class="goal-block"><span class="glabel">' + (g.habits.length > 1 ? "Gewoontes" : "Gewoonte") + '</span>' + g.habits.map(function (h) { return taskHtml(h); }).join("") + '</div>';
+    if (g.material) html += '<div class="goal-block"><span class="glabel">Materiaal</span>' + g.material.map(function (m) { return taskHtml(m, "mat"); }).join("") + '</div>';
+    html += '<p><b>Meting.</b> ' + esc(g.meting) + '</p><p><b>Blijft.</b> ' + esc(g.blijft) + '</p></div></details>';
+    return html;
+  }).join("");
+
+  /* situaties */
+  var SIT = [
+    ["Leuk artikel tegengekomen", "Inbox", "Naar Materiaal, in de rij van de gewoonte die het gaat gebruiken"],
+    ["Materiaal dat geen gewoonte gebruikt (werkboek, cursus voor ooit)", "Inbox", "Naar Ooit, of weggooien"],
+    ["Boek, lesboek of etude uit", "Afvinken, nu op het volgende uit dezelfde rij", "Niks: de gewoonte blijft hetzelfde"],
+    ["Iets in een kieslijst waar je veel zin in hebt", "p3 erop", "Niks"],
+    ["Zin in een boek over leermethodes", "Inbox", "Traject: vraag, resultaat, subtaken per deel, laatste stap de inzichten"],
+    ["Gedachte tijdens een traject", "Opmerking bij het traject", "Naar Mijn methode"],
+    ["Inzicht verandert een gewoonte", "Meteen in de beschrijving van die gewoonte", "Checken of het traject dicht kan"],
+    ["Idee onderweg", "Inbox, in één zin", "Beslissen: opdracht, traject, materiaal, Ooit of niks"],
+    ["Idee dat nog vaag is", "Opmerking bij het traject, of Inbox", "Bij het traject laten, een traject als het kan uitgroeien, anders naar Ooit"],
+    ["Stap van een traject afgerond", "Volgende stap meteen als subtaak; hij erft week en p2", "Checken of het traject nog precies één volgende stap heeft"],
+    ["Taak staat al twee weken op week", "Niks", "Kleiner maken, of het label eraf halen"],
+    ["Nieuwe vaste bezigheid", "Inbox", "In Gewoontes van het juiste (sub)project, met een terugkerende datum"],
+    ["Gewoonte die je niet meer nodig hebt", "Niks", "Bij de maandronde stoppen, of aanpassen"],
+    ["Deadline van een doel bereikt", "Laatste meting doen", "Metingen vergelijken, inzicht naar Mijn methode, traject sluiten, per gewoonte beslissen: houden of stoppen"],
+    ["Taak zonder p1 over tijd", "Bewust kiezen: vandaag doen, nieuwe datum, of datum weg", "Waarom lukte het niet? Kleiner maken of anders plannen"],
+    ["Taak met p1 over tijd", "Meteen regelen: het is een gemiste afspraak", "Waarom gemist? Volgende keer eerder beginnen"],
+    ["Nieuwe deadline van buitenaf (examen, inschrijving)", "Inbox, met de deadline erbij", "Deadline invullen, een startdatum kiezen en p1"],
+    ["Iets moois bewaard (gedicht, citaat)", "Notities", "Niks: geen actie, dus niet in Todoist"],
+    ["Concert of andere afspraak", "Agenda", "Voorbereiding als opdracht met een datum en p1"],
+    ["Iets kopen", "Inbox", "Opdracht in Leven"],
+    ["Abonnement opzeggen", "Inbox", "Opdracht met een deadline vóór de verlengdatum, een datum eerder en p1"],
+    ["Je wacht op iemand", "Label wacht op, naam «Wie: wat», datum op het moment van navragen", "Filter Wachten op langs"],
+    ["Idee voor een uitje of een film", "Inbox", "Naar Leven › Vrije tijd"],
+    ["Iets voor later, niet nu", "Inbox", "Naar Ooit"]
+  ];
+  var sitBody = document.getElementById("sit-body");
+  function renderSit(q) {
+    q = (q || "").toLowerCase().trim();
+    var rows = SIT.filter(function (r) { return !q || r.join(" ").toLowerCase().indexOf(q) > -1; });
+    sitBody.innerHTML = rows.length ? rows.map(function (r) { return "<tr><td>" + esc(r[0]) + "</td><td>" + esc(r[1]) + "</td><td>" + esc(r[2]) + "</td></tr>"; }).join("")
+      : '<tr><td colspan="3" class="note">Geen situatie gevonden. Probeer een ander woord.</td></tr>';
+  }
+  document.getElementById("sit-search").addEventListener("input", function (e) { renderSit(e.target.value); });
+  renderSit("");
+
+  /* kopieerknoppen */
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest(".copy"); if (!b) return;
+    var txt = b.dataset.copy, done = function () { b.textContent = "Gekopieerd"; setTimeout(function () { b.textContent = "Kopieer"; }, 1400); };
+    var fallback = function () {
+      var q = b.parentNode.querySelector(".query"); var r = document.createRange(); r.selectNodeContents(q);
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = "Geselecteerd"; setTimeout(function () { b.textContent = "Kopieer"; }, 1400);
+    };
+    try { navigator.clipboard.writeText(txt).then(done, fallback); } catch (err) { fallback(); }
+  });
+
+  /* checklists, bewaard per browser */
+  function load(k) { try { return JSON.parse(localStorage.getItem("ts-" + k) || "{}"); } catch (e) { return {}; } }
+  function save(k, v) { try { localStorage.setItem("ts-" + k, JSON.stringify(v)); } catch (e) {} }
+  Array.prototype.forEach.call(document.querySelectorAll(".checklist"), function (ul) {
+    var k = ul.dataset.list, st = load(k);
+    Array.prototype.forEach.call(ul.querySelectorAll("input"), function (inp) {
+      inp.checked = !!st[inp.id];
+      inp.addEventListener("change", function () { st[inp.id] = inp.checked; save(k, st); });
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-reset]"), function (b) {
+    b.addEventListener("click", function () {
+      var k = b.dataset.reset; save(k, {});
+      Array.prototype.forEach.call(document.querySelectorAll('.checklist[data-list="' + k + '"] input'), function (i) { i.checked = false; });
+    });
+  });
+
+  /* tabs per hoofdstuk en inhoudsopgave */
+  var chs = Array.prototype.slice.call(document.querySelectorAll(".chapter"));
+  var tabLinks = Array.prototype.slice.call(document.querySelectorAll("nav.chapters a"));
+  function slug(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
+  chs.forEach(function (ch) {
+    var heads = ch.querySelectorAll("section h3");
+    if (heads.length < 2) return;
+    var items = Array.prototype.map.call(heads, function (h) {
+      var sec = h.closest("section");
+      if (!sec.id) sec.id = ch.id + "-" + slug(h.textContent);
+      return '<li><a href="#' + sec.id + '">' + esc(h.textContent) + '</a></li>';
+    }).join("");
+    ch.querySelector("header").insertAdjacentHTML("afterend", '<nav class="toc" aria-label="Inhoud"><span class="toc-title">Inhoud</span><ol>' + items + '</ol></nav>');
+  });
+  function showCh(id) {
+    chs.forEach(function (c) { c.hidden = c.id !== id; });
+    tabLinks.forEach(function (a) {
+      var on = a.dataset.ch === id; a.classList.toggle("on", on);
+      if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    });
+  }
+  function route() {
+    var id = decodeURIComponent(location.hash.slice(1));
+    var el = id ? document.getElementById(id) : null;
+    var ch = el ? (el.classList.contains("chapter") ? el : el.closest(".chapter")) : null;
+    if (!ch) ch = chs[0];
+    showCh(ch.id);
+    if (el && el !== ch) el.scrollIntoView({ block: "start" }); else window.scrollTo(0, 0);
+  }
+  tabLinks.forEach(function (a) {
+    a.addEventListener("click", function (e) { e.preventDefault(); history.replaceState(null, "", "#" + a.dataset.ch); route(); });
+  });
+  window.addEventListener("hashchange", route);
+  route();
+})();
+</script>
+</body>
+</html>
